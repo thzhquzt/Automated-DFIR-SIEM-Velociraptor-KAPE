@@ -89,12 +89,16 @@ graph LR
 
 ```
 ├── docs/
-│   └── Slide_CDCS_Presentation.pdf     # Academic Defense Presentation Slide
-├── playbooks/                          # IR workflows & Triage check-sheets
-├── rules/                              # Custom Wazuh XML rules & Sysmon config
-├── velociraptor/                       # Custom VQL artifact definitions
-└── README.md                           # System documentation
+│   └── Unified_SOC_DFIR_Technical_Report.pdf   # Complete 51-Page Technical Specification & Lab Report
+├── playbooks/                                  # IR workflows & Triage check-sheets
+├── rules/                                      # Custom Wazuh XML rules & Sysmon config
+├── velociraptor/                               # Custom VQL artifact definitions
+└── README.md                                   # System documentation
 ```
+
+### 📄 Full Documentation
+For a complete, in-depth walkthrough of the system architecture, mathematical correlation models, and all 8 attack phases with forensic proof, see the full whitepaper:  
+👉 [docs/Unified_SOC_DFIR_Technical_Report.pdf](docs/Unified_SOC_DFIR_Technical_Report.pdf)
 
 ---
 
