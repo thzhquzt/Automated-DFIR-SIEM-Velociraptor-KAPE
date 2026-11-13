@@ -20,13 +20,19 @@ This project designs and implements an end-to-end **Unified 2-Tier SOC & Digital
 
 ## 🏛️ System Architecture & Network Topology
 
-The lab environment operates on a segregated subnet (`192.168.80.0/24`) designed for realistic adversary simulation, SIEM telemetry aggregation, and automated remote forensic triage:
+The solution is architected as an integrated 4-layer model: **Endpoint Telemetry Layer $\rightarrow$ SIEM Processing Layer $\rightarrow$ L1 Triage & SOAR Orchestration $\rightarrow$ L2 DFIR Offline Analysis**:
+
+<p align="center">
+  <img src="assets/architecture_4tier.png" alt="4-Tier System Architecture" width="900"/>
+  <br>
+  <em>Figure 1: Comprehensive 4-Tier Architecture connecting SIEM, SOAR, Velociraptor and KAPE Triage</em>
+</p>
 
 ```mermaid
 graph LR
     subnet["Subnet: 192.168.80.0/24"]
 
-    SIEM["<b>Wazuh SIEM & Velociraptor Server</b><br>IP: 192.168.80.10 (Ubuntu 22.04)<br>• Wazuh Manager / Indexer<br>• Velociraptor Server (Port 8000/8889)<br>• FastAPI & Web Dashboard"]
+    SIEM["<b>Wazuh SIEM & Velociraptor Server</b><br>IP: 192.168.80.10 (Ubuntu 22.04)<br>• Wazuh Manager / Indexer<br>• Velociraptor Server (Port 8000/8889)<br>• Custom SOC Dashboard"]
 
     W1["<b>Target Endpoint: WIN10-01</b><br>IP: 192.168.80.31 (Win 10 Pro x64)<br>• Sysmon v15+ (SwiftOnSecurity)<br>• Wazuh Agent (ID: 001)<br>• Velociraptor Agent"]
 
@@ -45,64 +51,99 @@ graph LR
 
 ---
 
-## ⚙️ Core Technical Capabilities
+## ⚙️ Core Technical Capabilities & Implementation
 
-### 1. Advanced Telemetry & SIEM Detection (Wazuh & OpenSearch)
-* **Endpoint Telemetry:** Integrated `Microsoft Sysmon v15+` with `Windows Security Event Logs` to track Process Creation (Event 1), Network Connections (Event 3), Memory Tampering / Injection (Event 10), and File Creation (Event 11).
-* **Detection & Correlation:** Authored custom Wazuh XML rules to map events directly to **MITRE ATT&CK** techniques (e.g., `T1003.001` LSASS Memory Dumping, `T1059.001` PowerShell Execution, `T1053` Scheduled Tasks).
+### 1. Centralized Telemetry & Real-Time SIEM Monitoring
+* **Telemetry Stack:** Combined `Sysmon v15+` with `Windows Security Event Logs` to detect Process Creation (Event 1), Network Connections (Event 3), Memory Tampering (Event 10), and File Creation (Event 11).
+* **Unified Dashboard:** Real-time visibility into alert trends, top attacked endpoints, and MITRE ATT&CK tactic distribution.
 
-### 2. Live Remote Forensics (Velociraptor & VQL)
-* Deployed **Velociraptor** clients with secure TLS communication back to the centralized server.
-* Utilized **Velociraptor Query Language (VQL)** to execute targeted remote forensic hunts:
-  * Hunting active process injections and hidden modules in memory.
-  * Auditing suspicious persistence mechanisms (Registry Run keys, startup folders, WMI subscriptions).
-  * Remotely triggering comprehensive artifact collections without disrupting production users.
-
-### 3. Automated Offline Triage Extraction (KAPE)
-* Preserved strict **Chain of Custody** by extracting key Windows forensic artifacts using **KAPE (Kroll Artifact Parser and Extractor)**:
-  * `$MFT` & `$LogFile` (NTFS File system tracking).
-  * `Prefetch` & `Amcache.hve` (Evidence of execution).
-  * `Shimcache` & `Registry Hives` (SYSTEM, SAM, SOFTWARE, NTUSER.dat).
-  * `Windows Event Logs` (.evtx).
-* Automated parsing using **EvtxECmd** into CSV format for rapid pivoting and forensic timeline reconstruction.
+<p align="center">
+  <img src="assets/wazuh_dashboard.png" alt="Wazuh SIEM Dashboard" width="850"/>
+  <br>
+  <em>Figure 2: Real-time Security Event Monitoring on Wazuh SIEM Dashboard</em>
+</p>
 
 ---
 
-## 🔬 Attack Scenarios & Incident Response Playbooks
+### 2. Tier 1 Incident Triage & Inlined Script De-obfuscation
+* **False Positive Reduction:** Investigated suspicious PowerShell executions triggered by automated administrative tasks.
+* **Inline CyberChef Integration:** Built-in decoding workflows for Base64 / UTF-16LE obfuscated commands directly within the SOC Dashboard to verify execution context without external data leakage.
 
-### Scenario 1: Credential Access via LSASS Memory Dump
-1. **Adversary Execution:** Attacker utilizes Mimikatz on target `WIN10-01` to dump credentials from `lsass.exe`.
-2. **SIEM Alert:** Wazuh catches Sysmon Event 10 (Process Access with `0x1010` / `0x143a` permissions targeting LSASS). Alert Level 12 triggers.
-3. **L1 Triage:** Analyst investigates process hierarchy, verifies hash reputation, and escalates to Tier 2.
-4. **DFIR Collection:** Velociraptor automatically initiates a memory hunt artifact and triggers KAPE triage package download (`KAPE_Triage.zip`).
-5. **Root Cause Analysis:** Extracted Prefetch and Event Log analysis confirms execution timeline and credential compromise scope.
+<p align="center">
+  <img src="assets/cyberchef_deobfuscation.png" alt="CyberChef De-obfuscation" width="850"/>
+  <br>
+  <em>Figure 3: Inline CyberChef Tool resolving Base64 EncodedCommand during L1 Triage</em>
+</p>
 
-### Scenario 2: Remote Persistence & Scheduled Task Creation
-1. **Adversary Action:** Malicious script establishes persistence via `schtasks.exe /create` executing obfuscated PowerShell.
-2. **Detection:** Wazuh flags Rule 60106 / Sysmon Event 1 (`schtasks` executing with `-ExecutionPolicy Bypass`).
-3. **Investigation:** Inlined Base64 payload de-obfuscated via CyberChef recipes; Velociraptor inspects Registry persistence keys.
-4. **Remediation:** Endpoint isolated via Wazuh Active Response; persistence removed and firewall drop policies enforced.
+---
+
+### 3. Multi-Stage Attack Detection: LSASS Dumping via LOLBAS
+* **Detection:** SIEM triggers **Level 14 (CRITICAL)** upon detecting unauthorized memory access to `lsass.exe` using legitimate system utilities (LOLBAS).
+* **Correlation:** Correlated parent-child execution telemetry across Sysmon Event 10 and Security Event 4688.
+
+<p align="center">
+  <img src="assets/lsass_dump_alert.png" alt="LSASS Dump Alert" width="850"/>
+  <br>
+  <em>Figure 4: Critical Level 14 Alert flagged on SIEM upon memory access to LSASS</em>
+</p>
+
+---
+
+### 4. Automated SOAR Evidence Acquisition (Velociraptor)
+* **Ticket Escalation:** L1 Analyst bundles correlated alerts into **Incident Ticket #6** and escalates to Tier 2.
+* **One-Click Forensic Acquisition:** Tier 2 triggers automated remote collection via Velociraptor API, gathering memory dumps and endpoint triage packages without disrupting production.
+
+<p align="center">
+  <img src="assets/velociraptor_soar_triage.png" alt="Velociraptor SOAR Trigger" width="850"/>
+  <br>
+  <em>Figure 5: Incident Ticket #6 featuring One-Click Velociraptor SOAR Forensic Trigger</em>
+</p>
+
+---
+
+### 5. Offline Deep Forensics (KAPE Triage) & Incident Resolution
+* **Preserving Chain of Custody:** Extracted `$MFT`, `Prefetch`, `Amcache`, `Registry Hives`, and `Event Logs` hashed via SHA-256 for evidentiary integrity.
+* **Forensic Findings:** Bounded execution timelines, confirmed credential compromise scope, and remediated compromised accounts before closing the ticket.
+
+<p align="center">
+  <img src="assets/kape_offline_forensics.png" alt="KAPE Offline Forensics" width="850"/>
+  <br>
+  <em>Figure 6: KAPE Offline Forensics Results revealing Prefetch, Registry, and NTLM artifacts</em>
+</p>
+
+<p align="center">
+  <img src="assets/ticket_resolved.png" alt="Ticket Resolved" width="850"/>
+  <br>
+  <em>Figure 7: Incident Ticket #6 successfully updated to RESOLVED following containment verification</em>
+</p>
 
 ---
 
 ## 📂 Repository Structure
 
 ```
+├── assets/                             # Architecture diagrams & UI screenshots
+│   ├── architecture_4tier.png
+│   ├── cyberchef_deobfuscation.png
+│   ├── kape_offline_forensics.png
+│   ├── lsass_dump_alert.png
+│   ├── ticket_resolved.png
+│   ├── velociraptor_soar_triage.png
+│   └── wazuh_dashboard.png
 ├── docs/
-│   └── Unified_SOC_DFIR_Technical_Report.pdf   # Complete 51-Page Technical Specification & Lab Report
+│   └── Unified_SOC_DFIR_Technical_Report.pdf   # Complete 49-Page Technical Specification & Lab Report
 ├── playbooks/                                  # IR workflows & Triage check-sheets
 ├── rules/                                      # Custom Wazuh XML rules & Sysmon config
 ├── velociraptor/                               # Custom VQL artifact definitions
 └── README.md                                   # System documentation
 ```
 
-### 📄 Full Documentation
+### 📄 Full Technical Report
 For a complete, in-depth walkthrough of the system architecture, mathematical correlation models, and all 8 attack phases with forensic proof, see the full whitepaper:  
-👉 [docs/Unified_SOC_DFIR_Technical_Report.pdf](docs/Unified_SOC_DFIR_Technical_Report.pdf)
+👉 [docs/Unified_SOC_DFIR_Technical_Report.pdf](docs/Unified_SOC_DFIR_Technical_Report.pdf) *(Starts directly at Table of Contents)*
 
 ---
 
-## 🎓 Academic Credit & Context
-* **Institution:** Academy of Cryptography Techniques (Học viện Kỹ thuật Mật mã - KMA)
+## 🎓 Technical Credit
 * **Author:** Nguyen Thanh Quyet ([@thzhquzt](https://github.com/thzhquzt))
-* **Specialization:** Information Security / Defensive Cybersecurity & DFIR
+* **Focus:** Defensive Cybersecurity, SOC Operations, Threat Detection & DFIR
